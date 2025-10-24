@@ -94,11 +94,8 @@ function threads.thread__main(smem)
                     -- reactor now formed
                     plc_state.reactor_formed = true
 
-                    println_ts("reactor is now formed.")
+                    println_ts("reactor is now formed")
                     log.info("reactor is now formed")
-
-                    -- SCRAM newly formed reactor
-                    smem.q.mq_rps.push_command(MQ__RPS_CMD.SCRAM)
 
                     -- determine if we are still in a degraded state
                     if (not networked) or nic.is_connected() then
@@ -107,10 +104,10 @@ function threads.thread__main(smem)
 
                     -- partial reset of RPS, specific to becoming formed
                     -- without this, auto control can't resume on chunk load
-                    rps.reset_formed()
-                elseif plc_state.reactor_formed and not rps.is_formed() then
+                    rps.reset_reattach()
+                elseif plc_state.reactor_formed and (rps.is_formed() == false) then
                     -- reactor no longer formed
-                    println_ts("reactor is no longer formed.")
+                    println_ts("reactor is no longer formed")
                     log.info("reactor is no longer formed")
 
                     plc_state.reactor_formed = false
@@ -182,7 +179,7 @@ function threads.thread__main(smem)
                         plc_dev.reactor = device
                         plc_state.no_reactor = false
 
-                        println_ts("reactor reconnected.")
+                        println_ts("reactor reconnected")
                         log.info("reactor reconnected")
 
                         -- we need to assume formed here as we cannot check in this main loop
@@ -203,7 +200,7 @@ function threads.thread__main(smem)
 
                         -- partial reset of RPS, specific to becoming formed/reconnected
                         -- without this, auto control can't resume on chunk load
-                        rps.reset_formed()
+                        rps.reset_reattach()
                     elseif networked and type == "modem" then
                         ---@cast device Modem
                         -- note, check init_ok first since nic will be nil if it is false
@@ -218,7 +215,7 @@ function threads.thread__main(smem)
                             log.info("comms modem reconnected")
 
                             -- determine if we are still in a degraded state
-                            if not plc_state.no_reactor then
+                            if plc_state.reactor_formed and not plc_state.no_reactor then
                                 plc_state.degraded = false
                             end
                         elseif device.isWireless() then
@@ -327,15 +324,10 @@ function threads.thread__rps(smem)
             if not (networked or smem.plc_state.fp_ok) then rps.reset(true) end
 
             -- check safety (SCRAM occurs if tripped)
-            if not plc_state.no_reactor then
-                local rps_tripped, rps_status_string, rps_first = rps.check()
-
-                if rps_tripped and rps_first then
-                    println_ts("[RPS] SCRAM! safety trip: " .. rps_status_string)
-                    if networked and not plc_state.no_modem then
-                        plc_comms.send_rps_alarm(rps_status_string)
-                    end
-                end
+            local rps_tripped, rps_status_string, rps_first = rps.check(not plc_state.no_reactor)
+            if rps_tripped and rps_first then
+                println_ts("[RPS] SCRAM! safety trip: " .. rps_status_string)
+                if networked then plc_comms.send_rps_alarm(rps_status_string) end
             end
 
             -- check for messages in the message queue

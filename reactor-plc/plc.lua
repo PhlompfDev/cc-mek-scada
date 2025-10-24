@@ -118,7 +118,7 @@ function plc.rps_init(reactor, is_formed)
         reactor_enabled = false,
         enabled_at = 0,
         emer_cool_active = nil, ---@type boolean
-        formed = is_formed,
+        formed = is_formed,     ---@type boolean|nil
         force_disabled = false,
         tripped = false,
         trip_cause = "ok"       ---@type rps_trip_cause
@@ -364,29 +364,35 @@ function plc.rps_init(reactor, is_formed)
         return public.activate()
     end
 
-    -- check all safety conditions
+    -- check all safety conditions if we have a formed reactor, otherwise handle a subset of conditions
     ---@nodiscard
+    ---@param has_reactor boolean if the PLC state indicates we have a reactor
     ---@return boolean tripped, rps_trip_cause trip_status, boolean first_trip
-    function public.check()
+    function public.check(has_reactor)
         local status = RPS_TRIP_CAUSE.OK
         local was_tripped = self.tripped
         local first_trip = false
 
-        if self.formed then
-            -- update state
-            parallel.waitForAll(
-                _is_formed,
-                _is_force_disabled,
-                _high_damage,
-                _high_temp,
-                _low_coolant,
-                _excess_waste,
-                _excess_heated_coolant,
-                _insufficient_fuel
-            )
+        if has_reactor then
+            if self.formed then
+                -- update state
+                parallel.waitForAll(
+                    _is_formed,
+                    _is_force_disabled,
+                    _high_damage,
+                    _high_temp,
+                    _low_coolant,
+                    _excess_waste,
+                    _excess_heated_coolant,
+                    _insufficient_fuel
+                )
+            else
+                -- check to see if its now formed
+                _is_formed()
+            end
         else
-            -- check to see if its now formed
-            _is_formed()
+            self.formed = nil
+            self.state[CHK.SYS_FAIL] = true
         end
 
         -- check system states in order of severity
@@ -474,6 +480,7 @@ function plc.rps_init(reactor, is_formed)
     ---@nodiscard
     function public.is_active() return self.reactor_enabled end
     ---@nodiscard
+    ---@return boolean|nil formed true if formed, false if not, nil if unknown
     function public.is_formed() return self.formed end
     ---@nodiscard
     function public.is_force_disabled() return self.force_disabled end
@@ -495,14 +502,14 @@ function plc.rps_init(reactor, is_formed)
     end
 
     -- partial RPS reset that only clears fault and sys_fail
-    function public.reset_formed()
+    function public.reset_reattach()
         self.tripped = false
         self.trip_cause = RPS_TRIP_CAUSE.OK
 
         self.state[CHK.FAULT] = false
         self.state[CHK.SYS_FAIL] = false
 
-        log.info("RPS: partial reset on formed")
+        log.info("RPS: partial reset on connected or formed")
     end
 
     -- reset the automatic and timeout trip flags, then clear trip if that was the trip cause
@@ -584,11 +591,7 @@ function plc.comms(version, nic, reactor, rps, conn_watchdog)
     -- dynamic reactor status information, excluding heating rate
     ---@return table data_table, boolean faulted
     local function _get_reactor_status()
-        local fuel = nil
-        local waste = nil
-        local coolant = nil
-        local hcoolant = nil
-
+        local fuel, waste, coolant, hcoolant = nil, nil, nil, nil
         local data_table = {}
 
         reactor.__p_disable_afc()
