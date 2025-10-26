@@ -111,7 +111,7 @@ local function main()
         },
 
         -- system objects
-        ---@class plc_sys 
+        ---@class plc_sys
         plc_sys = {
             rps = nil,          ---@type rps
             nic = nil,          ---@type nic
