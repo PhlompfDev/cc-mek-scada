@@ -196,7 +196,7 @@ local function main()
     ----------------------------------------
 
     -- init reactor protection system
-    smem_sys.rps = plc.rps_init(smem_dev.reactor, plc_state.reactor_formed)
+    smem_sys.rps = plc.rps_init(smem_dev.reactor, util.trinary(plc_state.no_reactor, nil, plc_state.reactor_formed))
     log.debug("startup> rps init")
 
     -- notify user of emergency coolant configuration status
