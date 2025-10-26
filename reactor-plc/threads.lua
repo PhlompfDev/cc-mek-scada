@@ -41,7 +41,7 @@ function threads.thread__main(smem)
     -- execute thread
     function public.exec()
         databus.tx_rt_status("main", true)
-        log.debug("main thread start")
+        log.debug("OS: main thread start")
 
         -- send status updates at 2Hz (every 10 server ticks) (every loop tick)
         -- send link requests at 0.5Hz (every 40 server ticks) (every 8 loop ticks)
@@ -236,7 +236,7 @@ function threads.thread__main(smem)
 
             -- check for termination request
             if event == "terminate" or ppm.should_terminate() then
-                log.info("terminate requested, main thread exiting")
+                log.info("OS: terminate requested, main thread exiting")
                 -- rps handles reactor shutdown
                 plc_state.shutdown = true
                 break
@@ -260,7 +260,7 @@ function threads.thread__main(smem)
             -- if not, we need to restart the clock
             -- this thread cannot be slept because it will miss events (namely "terminate" otherwise)
             if not plc_state.shutdown then
-                log.info("main thread restarting now...")
+                log.info("OS: main thread restarting now...")
             end
         end
     end
@@ -281,7 +281,7 @@ function threads.thread__rps(smem)
     -- execute thread
     function public.exec()
         databus.tx_rt_status("rps", true)
-        log.debug("rps thread start")
+        log.debug("OS: rps thread start")
 
         -- load in from shared memory
         local networked   = smem.networked
@@ -326,7 +326,7 @@ function threads.thread__rps(smem)
             -- check safety (SCRAM occurs if tripped)
             local rps_tripped, rps_status_string, rps_first = rps.check(not plc_state.no_reactor)
             if rps_tripped and rps_first then
-                println_ts("[RPS] SCRAM! safety trip: " .. rps_status_string)
+                println_ts("RPS: SCRAM'd on safety trip (" .. rps_status_string .. ")")
                 if networked then plc_comms.send_rps_alarm(rps_status_string) end
             end
 
@@ -339,15 +339,17 @@ function threads.thread__rps(smem)
                         -- received a command
                         if msg.message == MQ__RPS_CMD.SCRAM then
                             -- SCRAM
+                            log.info("RPS: OS requested SCRAM")
                             rps.scram()
                         elseif msg.message == MQ__RPS_CMD.DEGRADED_SCRAM then
                             -- lost peripheral(s)
+                            log.info("RPS: received PLC degraded alert")
                             rps.trip_fault()
                         elseif msg.message == MQ__RPS_CMD.TRIP_TIMEOUT then
                             -- watchdog tripped
+                            println_ts("RPS: supervisor timeout")
+                            log.warning("RPS: received supervisor timeout alert")
                             rps.trip_timeout()
-                            println_ts("supervisor timeout")
-                            log.warning("supervisor timeout")
                         end
                     elseif msg.qtype == mqueue.TYPE.DATA then
                         -- received data
@@ -363,17 +365,17 @@ function threads.thread__rps(smem)
             -- check for termination request
             if plc_state.shutdown then
                 -- safe exit
-                log.info("rps thread shutdown initiated")
+                log.info("OS: rps thread shutdown initiated")
 
                 if rps.scram() then
                     println_ts("exiting, reactor disabled")
-                    log.info("rps thread reactor SCRAM OK")
+                    log.info("OS: rps thread reactor SCRAM OK")
                 else
                     println_ts("exiting, reactor failed to disable")
-                    log.error("rps thread failed to SCRAM reactor on exit")
+                    log.error("OS: rps thread failed to SCRAM reactor on exit")
                 end
 
-                log.info("rps thread exiting")
+                log.info("OS: rps thread exiting")
                 break
             end
 
@@ -396,7 +398,7 @@ function threads.thread__rps(smem)
 
             if not plc_state.shutdown then
                 smem.plc_sys.rps.scram()
-                log.info("rps thread restarting in 5 seconds...")
+                log.info("OS: rps thread restarting in 5 seconds...")
                 util.psleep(5)
             end
         end
@@ -415,7 +417,7 @@ function threads.thread__comms_tx(smem)
     -- execute thread
     function public.exec()
         databus.tx_rt_status("comms_tx", true)
-        log.debug("comms tx thread start")
+        log.debug("OS: comms tx thread start")
 
         -- load in from shared memory
         local plc_state   = smem.plc_state
@@ -453,7 +455,7 @@ function threads.thread__comms_tx(smem)
 
             -- check for termination request
             if plc_state.shutdown then
-                log.info("comms tx thread exiting")
+                log.info("OS: comms tx thread exiting")
                 break
             end
 
@@ -475,7 +477,7 @@ function threads.thread__comms_tx(smem)
             databus.tx_rt_status("comms_tx", false)
 
             if not plc_state.shutdown then
-                log.info("comms tx thread restarting in 5 seconds...")
+                log.info("OS: comms tx thread restarting in 5 seconds...")
                 util.psleep(5)
             end
         end
@@ -497,7 +499,7 @@ function threads.thread__comms_rx(smem)
     -- execute thread
     function public.exec()
         databus.tx_rt_status("comms_rx", true)
-        log.debug("comms rx thread start")
+        log.debug("OS: comms rx thread start")
 
         -- load in from shared memory
         local plc_state   = smem.plc_state
@@ -535,7 +537,7 @@ function threads.thread__comms_rx(smem)
 
             -- check for termination request
             if plc_state.shutdown then
-                log.info("comms rx thread exiting")
+                log.info("OS: comms rx thread exiting")
                 break
             end
 
@@ -557,7 +559,7 @@ function threads.thread__comms_rx(smem)
             databus.tx_rt_status("comms_rx", false)
 
             if not plc_state.shutdown then
-                log.info("comms rx thread restarting in 5 seconds...")
+                log.info("OS: comms rx thread restarting in 5 seconds...")
                 util.psleep(5)
             end
         end
@@ -576,7 +578,7 @@ function threads.thread__setpoint_control(smem)
     -- execute thread
     function public.exec()
         databus.tx_rt_status("spctl", true)
-        log.debug("setpoint control thread start")
+        log.debug("OS: setpoint control thread start")
 
         -- load in from shared memory
         local plc_state    = smem.plc_state
@@ -666,7 +668,7 @@ function threads.thread__setpoint_control(smem)
 
             -- check for termination request
             if plc_state.shutdown then
-                log.info("setpoint control thread exiting")
+                log.info("OS: setpoint control thread exiting")
                 break
             end
 
@@ -688,7 +690,7 @@ function threads.thread__setpoint_control(smem)
             databus.tx_rt_status("spctl", false)
 
             if not plc_state.shutdown then
-                log.info("setpoint control thread restarting in 5 seconds...")
+                log.info("OS: setpoint control thread restarting in 5 seconds...")
                 util.psleep(5)
             end
         end
