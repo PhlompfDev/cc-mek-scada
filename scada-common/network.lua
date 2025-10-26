@@ -1,5 +1,5 @@
 --
--- Network Communications
+-- Network Communications and Message Authentication
 --
 
 local comms  = require("scada-common.comms")
@@ -18,7 +18,7 @@ local array  = require("lockbox.util.array")
 local network = {}
 
 -- cryptography engine
-local c_eng = {
+local _crypt = {
     key = nil,
     hmac = nil
 }
@@ -40,13 +40,13 @@ function network.init_mac(passkey)
     key_deriv.setPassword(passkey)
     key_deriv.finish()
 
-    c_eng.key = array.fromHex(key_deriv.asHex())
+    _crypt.key = array.fromHex(key_deriv.asHex())
 
     -- initialize HMAC
-    c_eng.hmac = hmac()
-    c_eng.hmac.setBlockSize(64)
-    c_eng.hmac.setDigest(md5)
-    c_eng.hmac.setKey(c_eng.key)
+    _crypt.hmac = hmac()
+    _crypt.hmac.setBlockSize(64)
+    _crypt.hmac.setDigest(md5)
+    _crypt.hmac.setKey(_crypt.key)
 
     local init_time = util.time_ms() - start
     log.info("NET: network.init_mac completed in " .. init_time .. "ms")
@@ -56,7 +56,7 @@ end
 
 -- de-initialize message authentication system
 function network.deinit_mac()
-    c_eng.key, c_eng.hmac = nil, nil
+    _crypt.key, _crypt.hmac = nil, nil
 end
 
 -- generate HMAC of message
@@ -65,11 +65,11 @@ end
 local function compute_hmac(message)
     -- local start = util.time_ms()
 
-    c_eng.hmac.init()
-    c_eng.hmac.update(stream.fromString(message))
-    c_eng.hmac.finish()
+    _crypt.hmac.init()
+    _crypt.hmac.update(stream.fromString(message))
+    _crypt.hmac.finish()
 
-    local hash = c_eng.hmac.asHex()
+    local hash = _crypt.hmac.asHex()
 
     -- log.debug("NET: compute_hmac(): hmac-md5 = " .. util.strval(hash) ..  " (took " .. (util.time_ms() - start) .. "ms)")
 
@@ -112,7 +112,7 @@ function network.nic(modem)
         self.iface     = ppm.get_iface(modem)
         self.name      = util.c(util.trinary(modem.isWireless(), "WLAN_PHY", "ETH_PHY"), "{", self.iface, "}")
         self.connected = true
-        self.use_hash  = c_eng.hmac and modem.isWireless()
+        self.use_hash  = _crypt.hmac and modem.isWireless()
 
         -- open only previously opened channels
         modem.closeAll()
