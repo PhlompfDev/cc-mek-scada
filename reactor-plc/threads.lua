@@ -97,6 +97,9 @@ function threads.thread__main(smem)
                     println_ts("reactor is now formed")
                     log.info("reactor is now formed")
 
+                    -- SCRAM newly formed reactor
+                    smem.q.mq_rps.push_command(MQ__RPS_CMD.SCRAM)
+
                     -- determine if we are still in a degraded state
                     if (not networked) or nic.is_connected() then
                         plc_state.degraded = false
@@ -298,7 +301,7 @@ function threads.thread__rps(smem)
             -- get plc_sys fields (may have been set late due to degraded boot)
             local rps       = smem.plc_sys.rps
             local plc_comms = smem.plc_sys.plc_comms
-            -- get reactor, it may have changed do to disconnect/reconnect
+            -- get reactor, it may have changed due to a disconnect/reconnect
             local reactor   = plc_dev.reactor
 
             -- SCRAM if no open connection
@@ -326,7 +329,7 @@ function threads.thread__rps(smem)
             -- check safety (SCRAM occurs if tripped)
             local rps_tripped, rps_status_string, rps_first = rps.check(not plc_state.no_reactor)
             if rps_tripped and rps_first then
-                println_ts("RPS: SCRAM'd on safety trip (" .. rps_status_string .. ")")
+                println_ts("RPS: SCRAM on safety trip (" .. rps_status_string .. ")")
                 if networked then plc_comms.send_rps_alarm(rps_status_string) end
             end
 
@@ -369,7 +372,7 @@ function threads.thread__rps(smem)
 
                 if rps.scram() then
                     println_ts("exiting, reactor disabled")
-                    log.info("OS: rps thread reactor SCRAM OK")
+                    log.info("OS: rps thread reactor SCRAM OK on exit")
                 else
                     println_ts("exiting, reactor failed to disable")
                     log.error("OS: rps thread failed to SCRAM reactor on exit")
