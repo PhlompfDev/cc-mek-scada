@@ -1,9 +1,10 @@
 --
--- Network Communications
+-- Network Communications and Message Authentication
 --
 
 local comms  = require("scada-common.comms")
 local log    = require("scada-common.log")
+local ppm    = require("scada-common.ppm")
 local util   = require("scada-common.util")
 
 local md5    = require("lockbox.digest.md5")
@@ -17,7 +18,7 @@ local array  = require("lockbox.util.array")
 local network = {}
 
 -- cryptography engine
-local c_eng = {
+local _crypt = {
     key = nil,
     hmac = nil
 }
@@ -39,23 +40,23 @@ function network.init_mac(passkey)
     key_deriv.setPassword(passkey)
     key_deriv.finish()
 
-    c_eng.key = array.fromHex(key_deriv.asHex())
+    _crypt.key = array.fromHex(key_deriv.asHex())
 
     -- initialize HMAC
-    c_eng.hmac = hmac()
-    c_eng.hmac.setBlockSize(64)
-    c_eng.hmac.setDigest(md5)
-    c_eng.hmac.setKey(c_eng.key)
+    _crypt.hmac = hmac()
+    _crypt.hmac.setBlockSize(64)
+    _crypt.hmac.setDigest(md5)
+    _crypt.hmac.setKey(_crypt.key)
 
     local init_time = util.time_ms() - start
-    log.info("network.init_mac completed in " .. init_time .. "ms")
+    log.info("NET: network.init_mac completed in " .. init_time .. "ms")
 
     return init_time
 end
 
 -- de-initialize message authentication system
 function network.deinit_mac()
-    c_eng.key, c_eng.hmac = nil, nil
+    _crypt.key, _crypt.hmac = nil, nil
 end
 
 -- generate HMAC of message
@@ -64,28 +65,40 @@ end
 local function compute_hmac(message)
     -- local start = util.time_ms()
 
-    c_eng.hmac.init()
-    c_eng.hmac.update(stream.fromString(message))
-    c_eng.hmac.finish()
+    _crypt.hmac.init()
+    _crypt.hmac.update(stream.fromString(message))
+    _crypt.hmac.finish()
 
-    local hash = c_eng.hmac.asHex()
+    local hash = _crypt.hmac.asHex()
 
-    -- log.debug("compute_hmac(): hmac-md5 = " .. util.strval(hash) ..  " (took " .. (util.time_ms() - start) .. "ms)")
+    -- log.debug("NET: compute_hmac(): hmac-md5 = " .. util.strval(hash) ..  " (took " .. (util.time_ms() - start) .. "ms)")
 
     return hash
 end
 
 -- NIC: Network Interface Controller<br>
--- utilizes HMAC-MD5 for message authentication, if enabled
----@param modem Modem modem to use
+-- utilizes HMAC-MD5 for message authentication, if enabled and this is wireless
+---@param modem Modem|nil modem to use
 function network.nic(modem)
     local self = {
-        connected = true, -- used to avoid costly MAC calculations if modem isn't even present
+        -- modem interface name
+        iface = "?",
+        -- phy name
+        name = "?",
+        -- used to quickly return out of tx/rx functions if there is nothing to do
+        connected = false,
+        -- used to avoid costly MAC calculations if not required
+        use_hash = false,
+        -- open channels
         channels = {}
     }
 
     ---@class nic:Modem
     local public = {}
+
+    -- get the phy name
+    ---@nodiscard
+    function public.phy_name() return self.name end
 
     -- check if this NIC has a connected modem
     ---@nodiscard
@@ -95,9 +108,14 @@ function network.nic(modem)
     ---@param reconnected_modem Modem
     function public.connect(reconnected_modem)
         modem = reconnected_modem
-        self.connected = true
 
-        -- open previously opened channels
+        self.iface     = ppm.get_iface(modem)
+        self.name      = util.c(util.trinary(modem.isWireless(), "WLAN_PHY", "ETH_PHY"), "{", self.iface, "}")
+        self.connected = true
+        self.use_hash  = _crypt.hmac and modem.isWireless()
+
+        -- open only previously opened channels
+        modem.closeAll()
         for _, channel in ipairs(self.channels) do
             modem.open(channel)
         end
@@ -117,13 +135,13 @@ function network.nic(modem)
     function public.is_modem(device) return device == modem end
 
     -- wrap modem functions, then create custom functions
-    public.connect(modem)
+    if modem then public.connect(modem) end
 
     -- open a channel on the modem<br>
     -- if disconnected *after* opening, previousy opened channels will be re-opened on reconnection
     ---@param channel integer
     function public.open(channel)
-        modem.open(channel)
+        if modem then modem.open(channel) end
 
         local already_open = false
         for i = 1, #self.channels do
@@ -141,7 +159,7 @@ function network.nic(modem)
     -- close a channel on the modem
     ---@param channel integer
     function public.close(channel)
-        modem.close(channel)
+        if modem then modem.close(channel) end
 
         for i = 1, #self.channels do
             if self.channels[i] == channel then
@@ -153,7 +171,7 @@ function network.nic(modem)
 
     -- close all channels on the modem
     function public.closeAll()
-        modem.closeAll()
+        if modem then modem.closeAll() end
         self.channels = {}
     end
 
@@ -165,17 +183,20 @@ function network.nic(modem)
         if self.connected then
             local tx_packet = packet ---@type authd_packet|scada_packet
 
-            if c_eng.hmac ~= nil then
+            if self.use_hash then
                 -- local start = util.time_ms()
                 tx_packet = comms.authd_packet()
 
                 ---@cast tx_packet authd_packet
                 tx_packet.make(packet, compute_hmac)
 
-                -- log.debug("network.modem.transmit: data processing took " .. (util.time_ms() - start) .. "ms")
+                -- log.debug("NET: network.modem.transmit: data processing took " .. (util.time_ms() - start) .. "ms")
             end
 
+---@diagnostic disable-next-line: need-check-nil
             modem.transmit(dest_channel, local_channel, tx_packet.raw_sendable())
+        else
+            log.debug("NET: network.transmit tx dropped, link is down")
         end
     end
 
@@ -190,10 +211,10 @@ function network.nic(modem)
     function public.receive(side, sender, reply_to, message, distance)
         local packet = nil
 
-        if self.connected then
+        if self.connected and side == self.iface then
             local s_packet = comms.scada_packet()
 
-            if c_eng.hmac ~= nil then
+            if self.use_hash then
                 -- parse packet as an authenticated SCADA packet
                 local a_packet = comms.authd_packet()
                 a_packet.receive(side, sender, reply_to, message, distance)
@@ -206,10 +227,10 @@ function network.nic(modem)
                         local computed_hmac = compute_hmac(textutils.serialize(s_packet.raw_header(), { allow_repetitions = true, compact = true }))
 
                         if a_packet.mac() == computed_hmac then
-                            -- log.debug("network.modem.receive: HMAC verified in " .. (util.time_ms() - start) .. "ms")
+                            -- log.debug("NET: network.modem.receive: HMAC verified in " .. (util.time_ms() - start) .. "ms")
                             s_packet.stamp_authenticated()
                         else
-                            -- log.debug("network.modem.receive: HMAC failed verification in " .. (util.time_ms() - start) .. "ms")
+                            -- log.debug("NET: network.modem.receive: HMAC failed verification in " .. (util.time_ms() - start) .. "ms")
                         end
                     end
                 end
