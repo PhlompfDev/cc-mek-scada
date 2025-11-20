@@ -18,7 +18,7 @@ local plc       = require("reactor-plc.plc")
 local renderer  = require("reactor-plc.renderer")
 local threads   = require("reactor-plc.threads")
 
-local R_PLC_VERSION = "v1.9.0"
+local R_PLC_VERSION = "v1.9.1"
 
 local println = util.println
 local println_ts = util.println_ts
@@ -89,7 +89,7 @@ local function main()
         plc_state = {
             fp_ok = false,
             shutdown = false,
-            degraded = true,
+            degraded = false,
             reactor_formed = true,
             no_reactor = true,
             no_modem = true
