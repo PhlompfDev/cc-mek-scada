@@ -129,6 +129,21 @@ return function (args)
 
     -- set the value (true simulates pressing the button)
     ---@param val boolean new value
+    ---@param mirrored boolean|nil apply visual feedback without callbacks
+    function e.set_value(val, mirrored)
+        if val then
+            if mirrored then
+                show_pressed()
+                if args.active_fg_bg ~= nil then tcd.dispatch(0.25, show_unpressed) end
+            else
+                e.handle_mouse(core.events.mouse_generic(core.events.MOUSE_CLICK.UP, 1, 1))
+            end
+        end
+    end
+
+    -- mirror a press without invoking callbacks
+    function e.preview_press()
+        e.set_value(true, true)
     function e.set_value(val)
         if val then e.handle_mouse(core.events.mouse_generic(core.events.MOUSE_CLICK.UP, 1, 1)) end
     end

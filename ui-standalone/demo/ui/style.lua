@@ -17,6 +17,7 @@ style.divider = cpair(colors.gray, colors._INHERIT)
 style.button = cpair(colors.black, colors.lightGray)
 style.button_active = cpair(colors.white, colors.green)
 style.hazard = cpair(colors.white, colors.red)
+style.hazard_accent = colors.orange
 style.hazard_dim = cpair(colors.white, colors.gray)
 style.switch_on = cpair(colors.black, colors.lime)
 style.switch_off = cpair(colors.white, colors.gray)
