@@ -144,6 +144,8 @@ return function (args)
     -- mirror a press without invoking callbacks
     function e.preview_press()
         e.set_value(true, true)
+    function e.set_value(val)
+        if val then e.handle_mouse(core.events.mouse_generic(core.events.MOUSE_CLICK.UP, 1, 1)) end
     end
 
     -- show butten as enabled

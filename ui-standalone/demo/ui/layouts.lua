@@ -60,6 +60,17 @@ local function _build_content(parent, style, shared)
             parent=page,x=2,y=6,width=14,text="Hazard",fg_bg=style.hazard,
             accent=style.hazard_accent,dis_fg_bg=style.hazard_dim,
             callback=function() shared.push_message("Hazard acknowledged") end
+            callback=function() shared.push_message("Confirm tapped") end
+        }
+
+        local cancel_btn = PushButton{
+            parent=page,x=15,y=3,text="Cancel",fg_bg=style.button,active_fg_bg=style.button_active,
+            callback=function() shared.push_message("Cancel tapped") end
+        }
+
+        local hazard = Hazard{
+            parent=page,x=2,y=6,width=14,text="Hazard",fg_bg=style.hazard,
+            dis_fg_bg=style.hazard_dim,callback=function() shared.push_message("Hazard acknowledged") end
         }
 
         App{
@@ -138,6 +149,14 @@ local function _build_content(parent, style, shared)
 
         shared.set_value("layouts_inner", 1)
 
+        require("graphics.elements.AppMultiPane"){
+            parent=page,x=2,y=h-3,width=w-2,height=3,panes=inner_panes,
+            nav_colors=style.nav,scroll_nav=true,callback=function(idx)
+                inner_nav.set_value(idx)
+                shared.push_message(("Switched to layout %d"):format(idx))
+            end
+        }
+
         table.insert(panes, page)
     end
 
@@ -156,6 +175,9 @@ local function _build_content(parent, style, shared)
     shared.register_value("main_tabs", tabbar)
 
     shared.set_value("main_tabs", 1)
+    TabBar{parent=parent,x=1,y=2,width=w,tabs=tabs,callback=function(idx)
+        content.set_value(idx)
+    end}
 
     return content
 end
